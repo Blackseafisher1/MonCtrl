@@ -37,8 +37,7 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "dxva2.lib")
 #pragma comment(lib, "uxtheme.lib")
-#pragma comment(lib, "advapi32.lib")
-#pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+// comctl6 + DPI manifest is embedded via app.rc / app.manifest
 #endif
 
 // PowerDisplay retry constants
@@ -1157,8 +1156,8 @@ static void tray_menu(int x, int y) {
             L"Native Win32 tray app controlling monitor brightness/contrast "
             L"via DDC/CI (dxva2 backend, PowerDisplay-style pipeline).\n\n"
             L"Config: %APPDATA%\\ddc-tray.conf\n"
-            L"Left-click: open  |  click away: close",
-            L"<nice.ege.cool@gmail.com>",
+            L"Left-click: open  |  click away: close\n\n"
+            L"Contact: nice.ege.cool@gmail.com",
             L"About MonCtrl", MB_OK | MB_ICONINFORMATION);
     }
     else if (c == 4) do_quit();

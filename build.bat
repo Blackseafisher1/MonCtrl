@@ -22,6 +22,8 @@ if %errorlevel%==0 (
   cl /nologo /O2 /W3 /DUNICODE /D_UNICODE main.cpp app.res /Fe:MonCtrl.exe /link /SUBSYSTEM:WINDOWS advapi32.lib
   if errorlevel 1 exit /b 1
   cl /nologo /O2 poke.cpp /Fe:poke.exe /link /SUBSYSTEM:CONSOLE user32.lib dxva2.lib
+  if errorlevel 1 exit /b 1
+  cl /nologo /O2 /W3 /DUNICODE /D_UNICODE installer.cpp /Fe:installer.exe /link /SUBSYSTEM:WINDOWS user32.lib ole32.lib shell32.lib uuid.lib
   exit /b %errorlevel%
 )
 
@@ -32,6 +34,8 @@ if %errorlevel%==0 (
   g++ -O2 -mwindows -municode -DUNICODE -D_UNICODE main.cpp app_rc.o -o MonCtrl.exe -luser32 -lgdi32 -lcomctl32 -lshell32 -ldxva2 -ladvapi32
   if errorlevel 1 exit /b 1
   g++ -O2 poke.cpp -o poke.exe -luser32 -ldxva2
+  if errorlevel 1 exit /b 1
+  g++ -O2 -mwindows -municode -DUNICODE -D_UNICODE installer.cpp -o installer.exe -lole32 -lshell32 -luuid
   exit /b %errorlevel%
 )
 
