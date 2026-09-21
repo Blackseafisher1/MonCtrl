@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
-project(MonCtrl LANGUAGES CXX)
+project(MonCtrl LANGUAGES CXX RC)
 
-add_executable(MonCtrl WIN32 main.cpp)
+add_executable(MonCtrl WIN32 main.cpp app.rc)
 add_executable(poke poke.cpp)
 
 set_target_properties(MonCtrl poke PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)

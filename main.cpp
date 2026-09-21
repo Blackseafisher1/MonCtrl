@@ -70,6 +70,7 @@
 #define ID_TITLE     500
 #define TIMER_APPLY  1
 #define TIMER_TRIM   2
+#define TIMER_RESUME 3
 
 struct Monitor {
     HMONITOR hmon_tag;
@@ -104,6 +105,9 @@ static int g_scroll = 0;
 static HANDLE g_worker, g_ev_apply, g_ev_quit;
 static CRITICAL_SECTION g_cs;
 static HANDLE g_poke = NULL;
+static bool g_bg_detect = false;       // re-detect without showing the window
+static bool g_dark = false;            // system theme dark
+static HBRUSH g_br_dark = NULL;
 
 // spawn the hidden poke helper (keeps the session DDC/CI path warm; on healthy
 // systems it is simply redundant)
@@ -169,6 +173,40 @@ static void set_dpi_awareness() {
 }
 
 static void trim_mem() { SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1); }
+
+// ---------- system theme (dark title bar + background only) ----------
+
+static bool is_system_dark() {
+    HKEY k;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                      0, KEY_READ, &k) != ERROR_SUCCESS)
+        return false;
+    DWORD val = 1, type = 0, size = sizeof(val);
+    LONG r = RegQueryValueExW(k, L"AppsUseLightTheme", NULL, &type, (LPBYTE)&val, &size);
+    RegCloseKey(k);
+    return r == ERROR_SUCCESS && val == 0;
+}
+
+static void apply_theme() {
+    g_dark = is_system_dark();
+    if (!g_br_dark) g_br_dark = CreateSolidBrush(RGB(32, 32, 32));
+    // dark/light window background via class brush
+    SetClassLongPtrW(g_main, GCLP_HBRBACKGROUND,
+                     (LONG_PTR)(g_dark ? g_br_dark : GetSysColorBrush(COLOR_BTNFACE)));
+    // immersive dark title bar (attribute 20, fallback 19 on older builds)
+    HMODULE d = LoadLibraryW(L"dwmapi.dll");
+    if (d) {
+        HRESULT (WINAPI *fn)(HWND, DWORD, LPCVOID, DWORD) =
+            (HRESULT (WINAPI *)(HWND, DWORD, LPCVOID, DWORD))GetProcAddress(d, "DwmSetWindowAttribute");
+        if (fn) {
+            int v = g_dark ? 1 : 0;
+            if (FAILED(fn(g_main, 20, &v, sizeof(v)))) fn(g_main, 19, &v, sizeof(v));
+        }
+        FreeLibrary(d);
+    }
+    InvalidateRect(g_main, NULL, TRUE);
+}
 
 // ---------- config (same INI format as the Linux ddc-gtk-tray.conf) ----------
 
@@ -1003,7 +1041,7 @@ static void populate_ui() {
             L"and DDC/CI is enabled in the monitor's OSD menu.");
         ShowWindow(g_status, SW_SHOW);
         relayout();
-        if (IsWindowVisible(g_main)) present();
+        if (!g_bg_detect || IsWindowVisible(g_main)) present();
         SetTimer(g_main, TIMER_TRIM, 1500, NULL);
         return;
     }
@@ -1054,7 +1092,8 @@ static void populate_ui() {
 
     apply_visibility();
     relayout();
-    present();
+    if (!g_bg_detect || IsWindowVisible(g_main)) present();
+    g_bg_detect = false; // next manual/first detection shows the window again
     SetTimer(g_main, TIMER_TRIM, 1500, NULL);
 }
 
@@ -1088,8 +1127,9 @@ static void tray_menu(int x, int y) {
     HMENU m = CreatePopupMenu();
     AppendMenuW(m, MF_STRING, 1, L"Display Controls");
     AppendMenuW(m, MF_STRING, 2, L"Re-detect monitors");
+    AppendMenuW(m, MF_STRING, 3, L"About");
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(m, MF_STRING, 3, L"Quit");
+    AppendMenuW(m, MF_STRING, 4, L"Quit");
     SetForegroundWindow(g_main);
     int c = (int)TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
                                 pt.x, pt.y, 0, g_main, NULL);
@@ -1097,10 +1137,20 @@ static void tray_menu(int x, int y) {
     DestroyMenu(m);
     if (c == 1) present();
     else if (c == 2) {
+        g_bg_detect = false; // manual: show the Detecting state and window
         start_poke();
         reset_detection();
     }
-    else if (c == 3) do_quit();
+    else if (c == 3) {
+        MessageBoxW(g_main,
+            L"MonCtrl 1.0\n\n"
+            L"Native Win32 tray app controlling monitor brightness/contrast "
+            L"via DDC/CI (dxva2 backend, PowerDisplay-style pipeline).\n\n"
+            L"Config: %APPDATA%\\ddc-tray.conf\n"
+            L"Left-click: open  |  click away: close",
+            L"About MonCtrl", MB_OK | MB_ICONINFORMATION);
+    }
+    else if (c == 4) do_quit();
 }
 
 // ---------- window ----------
@@ -1190,8 +1240,19 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         } else if (w == TIMER_TRIM) {
             KillTimer(h, TIMER_TRIM);
             trim_mem();
+        } else if (w == TIMER_RESUME) {
+            KillTimer(h, TIMER_RESUME);
+            // displays need a moment after resume; re-poke and rediscover
+            start_poke();
+            reset_detection();
         }
         return 0;
+    case WM_POWERBROADCAST:
+        if (w == PBT_APMRESUMEAUTOMATIC || w == PBT_APMRESUMESUSPEND) {
+            g_bg_detect = true; // silent: re-detect without showing the window
+            SetTimer(h, TIMER_RESUME, 2500, NULL);
+        }
+        return TRUE;
     case WM_APP_TRAY: {
         UINT ev = LOWORD(l);
         int x = GET_X_LPARAM(w), y = GET_Y_LPARAM(w);
@@ -1221,8 +1282,26 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         present();
         return 0;
     case WM_CTLCOLORSTATIC:
+        if (g_dark) {
+            SetBkColor((HDC)w, RGB(32, 32, 32));
+            SetTextColor((HDC)w, RGB(240, 240, 240));
+            return (LRESULT)g_br_dark;
+        }
         SetBkColor((HDC)w, GetSysColor(COLOR_BTNFACE));
         return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
+    case WM_CTLCOLORBTN:
+        if (g_dark) {
+            SetBkColor((HDC)w, RGB(32, 32, 32));
+            SetTextColor((HDC)w, RGB(240, 240, 240));
+            return (LRESULT)g_br_dark;
+        }
+        break;
+    case WM_SETTINGCHANGE:
+        if (l && lstrcmpiW((const wchar_t *)l, L"ImmersiveColorSet") == 0) {
+            apply_theme();
+            relayout();
+        }
+        return 0;
     case WM_DPICHANGED: {
         const RECT *r = (const RECT *)l;
         SetWindowPos(h, NULL, r->left, r->top, r->right - r->left, r->bottom - r->top,
@@ -1232,7 +1311,8 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         return 0;
     }
     case WM_DISPLAYCHANGE:
-        reset_detection(); // full rediscovery on topology change
+        g_bg_detect = true; // silent rediscovery on topology change
+        reset_detection();
         return 0;
     case WM_DESTROY: {
         NOTIFYICONDATAW nid;
@@ -1287,7 +1367,11 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     g_worker = CreateThread(NULL, 0, worker, NULL, 0, NULL);
     g_msg_tbcreated = RegisterWindowMessageW(L"TaskbarCreated");
 
-    g_icon = make_icon();
+    // embedded icon (app.rc), fallback to runtime-drawn
+    g_icon = (HICON)LoadImageW(inst, MAKEINTRESOURCEW(1), IMAGE_ICON,
+                               GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
+                               LR_DEFAULTCOLOR);
+    if (!g_icon) g_icon = make_icon();
 
     WNDCLASSW wc;
     ZeroMemory(&wc, sizeof(wc));
@@ -1305,6 +1389,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
                              NULL, NULL, inst, NULL);
     if (!g_main) return 1;
     round_corners(g_main);
+    apply_theme();
 
     recreate_fonts(get_dpi(g_main));
 

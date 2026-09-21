@@ -17,7 +17,9 @@ if not %errorlevel%==0 (
 
 where cl >nul 2>nul
 if %errorlevel%==0 (
-  cl /nologo /O2 /W3 /DUNICODE /D_UNICODE main.cpp /Fe:MonCtrl.exe /link /SUBSYSTEM:WINDOWS advapi32.lib
+  rc /nologo app.rc
+  if errorlevel 1 exit /b 1
+  cl /nologo /O2 /W3 /DUNICODE /D_UNICODE main.cpp app.res /Fe:MonCtrl.exe /link /SUBSYSTEM:WINDOWS advapi32.lib
   if errorlevel 1 exit /b 1
   cl /nologo /O2 poke.cpp /Fe:poke.exe /link /SUBSYSTEM:CONSOLE user32.lib dxva2.lib
   exit /b %errorlevel%
@@ -25,7 +27,9 @@ if %errorlevel%==0 (
 
 where g++ >nul 2>nul
 if %errorlevel%==0 (
-  g++ -O2 -mwindows -municode -DUNICODE -D_UNICODE main.cpp -o MonCtrl.exe -luser32 -lgdi32 -lcomctl32 -lshell32 -ldxva2 -ladvapi32
+  windres app.rc -O coff -o app_rc.o
+  if errorlevel 1 exit /b 1
+  g++ -O2 -mwindows -municode -DUNICODE -D_UNICODE main.cpp app_rc.o -o MonCtrl.exe -luser32 -lgdi32 -lcomctl32 -lshell32 -ldxva2 -ladvapi32
   if errorlevel 1 exit /b 1
   g++ -O2 poke.cpp -o poke.exe -luser32 -ldxva2
   exit /b %errorlevel%
