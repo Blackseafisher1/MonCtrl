@@ -1158,6 +1158,7 @@ static void tray_menu(int x, int y) {
             L"via DDC/CI (dxva2 backend, PowerDisplay-style pipeline).\n\n"
             L"Config: %APPDATA%\\ddc-tray.conf\n"
             L"Left-click: open  |  click away: close",
+            L"<nice.ege.cool@gmail.com>",
             L"About MonCtrl", MB_OK | MB_ICONINFORMATION);
     }
     else if (c == 4) do_quit();
