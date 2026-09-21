@@ -4,3 +4,6 @@
 *.pdb
 *.ilk
 build/
+MonCtrl.exe.manifest
+app.res
+*.res
