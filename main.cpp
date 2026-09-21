@@ -962,6 +962,9 @@ static void relayout() {
         si.nPos = g_scroll;
         SetScrollInfo(g_main, SB_VERT, &si, TRUE);
     }
+    // force a full repaint so hidden/moved controls leave no ghosts
+    InvalidateRect(g_main, NULL, TRUE);
+    UpdateWindow(g_main);
 #undef MUL
     s_in_layout = false;
 }
