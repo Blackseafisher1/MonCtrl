@@ -1,4 +1,4 @@
-// MonCtrl - Windows native tray app controlling monitor brightness/contrast via DDC/CI.
+﻿// MonCtrl - Windows native tray app controlling monitor brightness/contrast via DDC/CI.
 // Behavior-mirror of ddcutil_simple_tray_ui. Display detection copies the PowerToys
 // "Power Display" pipeline exactly:
 //   1. QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS) inventory: GDI name, friendly name,
@@ -36,6 +36,7 @@
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "dxva2.lib")
+#pragma comment(lib, "uxtheme.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #endif
@@ -90,7 +91,7 @@ static Monitor mons[MAX_MON];
 static int mon_count = 0;
 
 static HINSTANCE g_inst;
-static HWND g_main, g_header, g_sync_check, g_sync_scale, g_sync_val, g_sync_hint, g_status, g_btn[4];
+static HWND g_main, g_header, g_sync_check, g_sync_scale, g_sync_val, g_sync_hint, g_btn[4];
 static HWND g_tips;
 static bool g_populated = false, g_updating = false, g_sync = false, g_timer_on = false;
 static HFONT g_fnt, g_fnt_bold, g_fnt_small;
@@ -174,6 +175,19 @@ static void set_dpi_awareness() {
 
 static void trim_mem() { SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1); }
 
+// drop a control's visual styles so classic text colors apply (dark mode checkbox)
+static void set_theme_window(HWND h, bool untheme) {
+    if (!h) return;
+    HMODULE d = GetModuleHandleW(L"uxtheme.dll");
+    if (!d) d = LoadLibraryW(L"uxtheme.dll");
+    if (!d) return;
+    HRESULT (WINAPI *fn)(HWND, LPCWSTR, LPCWSTR) =
+        (HRESULT (WINAPI *)(HWND, LPCWSTR, LPCWSTR))GetProcAddress(d, "SetWindowTheme");
+    if (!fn) return;
+    if (untheme) fn(h, L"", L"");
+    else fn(h, NULL, NULL);
+}
+
 // ---------- system theme (dark title bar + background only) ----------
 
 static bool is_system_dark() {
@@ -204,6 +218,10 @@ static void apply_theme() {
             if (FAILED(fn(g_main, 20, &v, sizeof(v)))) fn(g_main, 19, &v, sizeof(v));
         }
         FreeLibrary(d);
+    }
+    // classic-render the checkbox in dark mode so WM_CTLCOLORBTN text colors apply
+    if (g_sync_check) {
+        set_theme_window(g_sync_check, g_dark);
     }
     InvalidateRect(g_main, NULL, TRUE);
 }
@@ -562,8 +580,6 @@ static void reset_detection() {
     free_all_monitors();
     if (g_populated) {
         teardown_ui();
-        SetWindowTextW(g_status, L"Detecting displays...");
-        ShowWindow(g_status, SW_SHOW);
         relayout();
     }
     g_disc_done = false;
@@ -910,10 +926,6 @@ static void relayout() {
         mv(g_btn[i], x + i * (bw + MUL(6)), y, bw, MUL(26));
     y += MUL(32);
 
-    if (ctl_visible(g_status)) {
-        mv(g_status, x, y, w, MUL(36));
-        y += MUL(36);
-    }
 
     int need = y + M;
 
@@ -1035,11 +1047,6 @@ static void populate_ui() {
 
     if (mon_count == 0) {
         g_populated = true;
-        SetWindowTextW(g_status,
-            L"No DDC/CI monitors detected.\n"
-            L"Make sure your graphics driver is installed\n"
-            L"and DDC/CI is enabled in the monitor's OSD menu.");
-        ShowWindow(g_status, SW_SHOW);
         relayout();
         if (!g_bg_detect || IsWindowVisible(g_main)) present();
         SetTimer(g_main, TIMER_TRIM, 1500, NULL);
@@ -1400,7 +1407,6 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     g_sync_scale = mk_track(ID_SYNCSCALE, 100, 50);
     g_sync_val = mk_static(0, L"-", SS_RIGHT, g_fnt);
     g_sync_hint = mk_static(ID_HINT, L"per-monitor offsets apply", 0, g_fnt_small);
-    g_status = mk_static(ID_STATUS, L"Detecting displays...", SS_EDITCONTROL, g_fnt);
 
     static const wchar_t *btxt[4] = { L"Min +off", L"Max +off", L"Min abs", L"Max abs" };
     static const wchar_t *btip[4] = {
@@ -1423,6 +1429,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     SendMessageW(g_sync_check, BM_SETCHECK, g_sync ? BST_CHECKED : BST_UNCHECKED, 0);
 
     apply_fonts();
+    apply_theme();
     apply_visibility();
     relayout();
     for (int i = 0; i < 4; i++) add_tip(g_btn[i], btip[i]);
@@ -1446,3 +1453,4 @@ done:
     if (g_icon_dib) DeleteObject(g_icon_dib);
     return 0;
 }
+
