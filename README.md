@@ -20,13 +20,18 @@ node-ddcci (both use dxva2):
    friendly monitor names ("24E3", ...) - calling it before opening handles
    makes dxva2 return NULL handles forever on some systems
 
-### The poke helper
+### The poke helper (required part of the app)
 
-On some systems `GetPhysicalMonitorsFromHMONITOR` keeps returning NULL handles
-until another process performs open/destroy cycles on the monitor handles. The
-tiny `poke.exe` helper does exactly that for ~12 s at startup (hidden, ~0.5 MB,
-exits by itself). If detection ever gets stuck again, right-click the tray icon
-and use **Re-detect monitors** - it re-runs the poke and rediscovery.
+`GetPhysicalMonitorsFromHMONITOR` only returns valid handles while some process
+performs open/destroy cycles on the monitor handles - without that, it keeps
+returning NULL handles and no monitor can ever be opened. `poke.exe` is therefore
+a fundamental, always-required part of MonCtrl, not an optional workaround: it
+runs automatically at every startup and on every re-detect, hidden, at ~0.5 MB,
+for a bounded ~12 s run, then exits by itself. This changes nothing about the
+app being lightweight.
+
+If detection ever gets stuck again, right-click the tray icon and use
+**Re-detect monitors** - it re-runs the poke and rediscovery.                                                                                              
 
 ## Features (mirrored from the Linux app)
 
