@@ -1,8 +1,26 @@
 # MonCtrl
 
+ <img width="512" height="512" alt="MonCtrl" src="https://github.com/user-attachments/assets/8c911dd5-b39b-434f-81a1-ecb570519f7f" />
+
+
 Minimal Windows-native (pure Win32, no Qt, static allocation only) tray app
 controlling monitor brightness and contrast over DDC/CI. Behavior-mirror of the
 Linux ddcutil_simple_tray_ui tray app.
+
+# Install
+
+- x64    :  [MonCtrl.zip](https://github.com/user-attachments/files/32531839/MonCtrl.zip)
+- x86_32 :  [MonCtrl_x86_32.zip](https://github.com/user-attachments/files/32531864/MonCtrl_x86_32.zip)
+
+You have to compile to arm youself if you want it
+
+# Screenshots
+
+  <img width="421" height="332" alt="image" src="https://github.com/user-attachments/assets/c6393f37-0f28-494d-b14f-807a0ee0414c" />
+
+   <img width="422" height="334" alt="image" src="https://github.com/user-attachments/assets/fa29a4b7-534c-4d77-8605-e16199cc744d" />
+
+  
 
 ## How detection works
 
