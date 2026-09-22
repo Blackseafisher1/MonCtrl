@@ -52,10 +52,12 @@ If detection ever gets stuck again, right-click the tray icon and use
 
 ## Build
 
-MSVC (any prompt; build.bat loads the VS environment itself):
+MSVC (any prompt; build.bat finds the VS environment itself):
 
 ```sh
-build.bat
+build.bat            # x64, into the project folder
+build.bat -x32       # 32-bit, into .\x32\
+build.bat -arm       # ARM64 cross build into .\arm\ (needs ARM64 build tools)
 ```
 
 CMake:
@@ -65,7 +67,7 @@ cmake -B build
 cmake --build build --config Release
 ```
 
-MinGW-w64:
+MinGW-w64 (x64 only; cross builds need MSVC):
 
 ```sh
 g++ -O2 -mwindows -municode -DUNICODE -D_UNICODE main.cpp -o MonCtrl.exe -luser32 -lgdi32 -lcomctl32 -lshell32 -ldxva2

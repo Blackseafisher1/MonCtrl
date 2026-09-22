@@ -1357,7 +1357,7 @@ static void round_corners(HWND h) {
     HRESULT (WINAPI *fn)(HWND, DWORD, LPCVOID, DWORD) =
         (HRESULT (WINAPI *)(HWND, DWORD, LPCVOID, DWORD))GetProcAddress(d, "DwmSetWindowAttribute");
     if (fn) {
-        INT_PTR pref = 2; // DWMWCP_ROUND
+        int pref = 2; // DWMWCP_ROUND (int: 4 bytes on x86, x64 and ARM64)
         fn(h, 33, &pref, sizeof(pref)); // DWMWA_WINDOW_CORNER_PREFERENCE
     }
     FreeLibrary(d);
