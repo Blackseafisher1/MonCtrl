@@ -570,14 +570,15 @@ static void detect_pump() {
     }
 }
 
-// Tear down monitors + UI and restart the bounded detection rounds
+// Tear down UI + monitors and restart the bounded detection rounds
 // (used by manual re-detect, resume re-detect and display-change).
+// Order matters: teardown_ui() first (destroys the live controls), only then
+// free_all_monitors() (which zeroes the stored HWNDs) - otherwise the old
+// controls are orphaned and duplicate the rebuilt ones on screen.
 static void reset_detection() {
+    if (g_populated) teardown_ui();
     free_all_monitors();
-    if (g_populated) {
-        teardown_ui();
-        relayout();
-    }
+    relayout();
     g_disc_done = false;
     g_disc_rounds = 0;
     g_last_attempt = 0;
