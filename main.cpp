@@ -1,16 +1,21 @@
 ﻿// MonCtrl - Windows native tray app controlling monitor brightness/contrast via DDC/CI.
-// Behavior-mirror of ddcutil_simple_tray_ui. Display detection copies the PowerToys
-// "Power Display" pipeline exactly:
-//   1. QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS) inventory: GDI name, friendly name,
-//      device path (stable id), Windows monitor number
-//   2. EnumDisplayMonitors -> HMONITOR list
-//   3. per HMONITOR: GetMonitorInfo -> GDI name -> match inventory entry
-//   4. GetPhysicalMonitors with retry (3 x 200 ms) + NULL-handle filtering
-//   5. VCP probe (0x10/0x12) with 3 x 100 ms pacing
-//   6. name: FriendlyName (non-Generic) -> physical description (non-Generic/PnP)
-//      -> "External Display"; key: sanitized device path
-// All allocations are static (fixed-size arrays). RAM target < 5 MB.
-//  > 1 MB idle ram usage. 
+// Win32 port of ddcutil_simple_tray_ui (no Qt). Detection order is load-bearing:
+//   1. EnumDisplayMonitors -> HMONITOR list
+//   2. per HMONITOR: GetNumberOfPhysicalMonitorsFromHMONITOR ->
+//      GetPhysicalMonitorsFromHMONITOR (zero-initialized array, NULL-handle
+//      filtering), single-shot per round, retried across rounds from the main
+//      message loop
+//   3. single VCP read each for 0x10 (brightness) / 0x12 (contrast)
+//   4. identity from registry EDID (manufacturer:model:serial config keys)
+//   5. AFTER acquisition completes, QueryDisplayConfig maps GDI device names
+//      to friendly monitor names - calling it before opening handles makes
+//      dxva2 return NULL handles forever on some systems
+// On some systems the opens only succeed while poke.exe (spawned at startup
+// and on every re-detect) performs open/destroy cycles; detection therefore
+// runs bounded retry rounds (~40 s) and then stops - recovery is via poke +
+// Re-detect, resume re-detect, or display-change re-detect.
+// All allocations are static (fixed-size arrays). RAM target < 5 MB
+// (typically well under 1 MB idle).
 
 #ifndef UNICODE
 #define UNICODE
@@ -41,13 +46,10 @@
 // comctl6 + DPI manifest is embedded via app.rc / app.manifest
 #endif
 
-// PowerDisplay retry constants
-#define PHYS_ATTEMPTS   3
-#define PHYS_RETRY_MS   200
-#define PROBE_ATTEMPTS  3
-#define PROBE_PACE_MS   100
-// #define DISCOVER_ROUNDS 20      // re-run whole discovery while nothing acquired
-#define DISCOVER_WAIT_MS 1500
+// Delay between back-to-back DDC write transactions on the worker thread.
+// Opens and VCP reads are intentionally single-shot per detection round:
+// poke.exe warms the bus and detect_pump() spaces the rounds.
+#define WRITE_PACE_MS 100
 
 #define VCP_BRIGHTNESS 0x10
 #define VCP_CONTRAST   0x12
@@ -56,13 +58,11 @@
 #define DEBOUNCE_MS 250
 
 #define WM_APP_TRAY     (WM_APP + 1)
-#define WM_APP_POPULATE (WM_APP + 2)
 #define WM_APP_SHOW     (WM_APP + 3)
 
 #define ID_SYNCCHK   1
 #define ID_SYNCSCALE 2
 #define ID_HINT      3
-#define ID_STATUS    4
 #define ID_HEADER    5
 #define ID_BTN       10
 #define ID_BRI       100
@@ -110,7 +110,10 @@ static bool g_bg_detect = false;       // re-detect without showing the window
 static bool g_dark = false;            // system theme dark
 static HBRUSH g_br_dark = NULL;
 
-//initialize the DDC connection (poke.exe is needed)
+// Spawns poke.exe (bounded ~12 s self-exiting run in CREATE_NO_WINDOW): its
+// open/destroy cycles warm the session DDC path so our single-shot opens
+// succeed. Re-spawned on manual re-detect and after resume. There is no
+// in-process equivalent, so detection deliberately does no endless retry.
 static void start_poke() {
     char exe[MAX_PATH], dir[MAX_PATH];
     GetModuleFileNameA(NULL, exe, MAX_PATH);
@@ -254,14 +257,12 @@ static void save_conf() {
     }
 }
 
-// ---------- DDC primitives (PowerDisplay: single transaction + pacing at callers) ----------
+// ---------- DDC primitives ----------
 
+// Single VCP read attempt. No in-function retry: the bus is warmed by
+// poke.exe and detect_pump() re-runs the whole round on a miss.
 static bool vcp_probe(HANDLE h, BYTE code, DWORD *cur, DWORD *mx) {
-    for (int i = 0; i < PROBE_ATTEMPTS; i++) {
-        if (i) Sleep(PROBE_PACE_MS);
-        if (GetVCPFeatureAndVCPFeatureReply(h, code, NULL, cur, mx)) return true;
-    }
-    return false;
+    return GetVCPFeatureAndVCPFeatureReply(h, code, NULL, cur, mx) ? true : false;
 }
 
 // ---------- inventory ----------
@@ -351,7 +352,7 @@ static int CollectHmons(HArr *out) {
     return out->n;
 }
 
-// ---------- steps 3-6, per-HMONITOR pipeline ----------
+// ---------- per-monitor open + EDID identify ----------
 
 static bool name_is_generic(const wchar_t *s) {
     if (!s || !s[0]) return true;
@@ -378,36 +379,6 @@ static void sanitize_key(char *s) {
               c == ':' || c == '-' || c == '_' || c == '.'))
             *s = '_';
     }
-}
-
-// GetPhysicalMonitors with retry + NULL-handle filtering (PowerDisplay:
-// 3 attempts, 200 ms; on NULL handles destroy everything and retry)
-static bool GetPhysicalWithRetry(HMONITOR hm, HANDLE *out, WCHAR desc[128]) {
-    *out = NULL;
-    desc[0] = 0;
-    for (int a = 0; a < PHYS_ATTEMPTS; a++) {
-        if (a) Sleep(PHYS_RETRY_MS);
-        DWORD n = 0;
-        if (!GetNumberOfPhysicalMonitorsFromHMONITOR(hm, &n) || n == 0) continue;
-        if (n > MAX_MON) n = MAX_MON;
-        PHYSICAL_MONITOR pm[MAX_MON];
-        ZeroMemory(pm, sizeof(pm));
-        if (!GetPhysicalMonitorsFromHMONITOR(hm, n, pm)) continue;
-        HANDLE first = NULL;
-        for (DWORD i = 0; i < n; i++) {
-            if (pm[i].hPhysicalMonitor && !first) {
-                first = pm[i].hPhysicalMonitor;
-                lstrcpynW(desc, pm[i].szPhysicalMonitorDescription, 128);
-            } else {
-                DestroyPhysicalMonitor(pm[i].hPhysicalMonitor);
-            }
-        }
-        if (first) {
-            *out = first;
-            return true;
-        }
-    }
-    return false;
 }
 
 static void free_all_monitors() {
@@ -545,7 +516,10 @@ static void discover_round() {
     }
 }
 
-// call from the main loop; paces retry rounds and finishes into populate
+// Driven from the main loop. Bounded retry window (~40 s: fast rounds first,
+// then 1.5 s pacing) so a fresh poke.exe run always fits inside it; recovery
+// after that is via poke + Re-detect, resume re-detect, or display-change
+// re-detect - never by looping forever here.
 static void detect_pump() {
     if (g_disc_done) return;
     DWORD now = GetTickCount();
@@ -569,12 +543,16 @@ static void detect_pump() {
         g_disc_done = true;
         fill_friendly_names();
         populate_ui();
-    } else if (grown || (g_disc_rounds >= 30 && !g_populated)) {
-        populate_ui();
-        if (g_disc_rounds >= 30) g_disc_rounds = 1; // keep retrying quietly
+    } else if (grown) {
+        populate_ui(); // show partial results early
+    } else if (g_disc_rounds >= 30) {
+        g_disc_done = true;
+        if (!g_populated) populate_ui(); // empty UI once; never pops up on its own
     }
 }
 
+// Tear down monitors + UI and restart the bounded detection rounds
+// (used by manual re-detect, resume re-detect and display-change).
 static void reset_detection() {
     free_all_monitors();
     if (g_populated) {
@@ -609,7 +587,7 @@ static DWORD WINAPI worker(LPVOID) {
                 if (jobs[j].code == VCP_BRIGHTNESS) m->la_bri = (int)jobs[j].val;
                 else m->la_con = (int)jobs[j].val;
             }
-            if (j + 1 < n) Sleep(PROBE_PACE_MS);
+            if (j + 1 < n) Sleep(WRITE_PACE_MS);
         }
     }
     return 0;
@@ -862,6 +840,8 @@ static void apply_visibility() {
 
 static bool s_in_layout = false;
 
+// WS_VISIBLE style bit, not IsWindowVisible(): a child of a hidden window
+// reports invisible even when shown, which broke the first-populate layout.
 static bool ctl_visible(HWND h) {
     return h && (GetWindowLongW(h, GWL_STYLE) & WS_VISIBLE) != 0;
 }

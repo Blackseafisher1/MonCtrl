@@ -12,8 +12,9 @@ node-ddcci (both use dxva2):
 1. `EnumDisplayMonitors` -> HMONITOR list
 2. Per HMONITOR: `GetNumberOfPhysicalMonitorsFromHMONITOR` ->
    `GetPhysicalMonitorsFromHMONITOR` (zero-initialized array, NULL-handle
-   filtering), retried in rounds from the main message loop
-3. VCP probe (0x10 brightness / 0x12 contrast): 3 attempts, 100 ms pacing
+   filtering), single-shot per round, retried across rounds from the main
+   message loop
+3. Single VCP read each for 0x10 (brightness) / 0x12 (contrast)
 4. Identity from registry EDID (manufacturer:model:serial config keys)
 5. AFTER acquisition completes, `QueryDisplayConfig` maps GDI device names to
    friendly monitor names ("24E3", ...) - calling it before opening handles
@@ -30,7 +31,9 @@ and use **Re-detect monitors** - it re-runs the poke and rediscovery.
 ## Features (mirrored from the Linux app)
 
 - Tray flyout window: opens next to the tray icon (left-click), closes when you
-  click away; right-click menu: Display Controls / Re-detect monitors / Quit
+  click away; right-click menu: Display Controls / Re-detect monitors / About / Quit
+- Resume from suspend re-pokes and re-detects silently in the background
+- Dark title bar + background following the system theme (controls stay native)
 - Sync mode: one brightness slider + per-monitor offsets (-100..100)
 - Individual mode: brightness + contrast slider per monitor with live value
 - Min/Max buttons: `Min +off`, `Max +off`, `Min abs`, `Max abs`
@@ -60,3 +63,20 @@ MinGW-w64:
 ```sh
 g++ -O2 -mwindows -municode -DUNICODE -D_UNICODE main.cpp -o MonCtrl.exe -luser32 -lgdi32 -lcomctl32 -lshell32 -ldxva2
 ```
+
+## Distribution
+
+`build.bat` produces three binaries: `MonCtrl.exe`, `poke.exe`, `installer.exe`.
+The installer does **not** bundle the app exes - it is a copy stub (~100 KB):
+ship all three files in one folder and run `installer.exe` from it. It asks
+for a target folder (auto-appends `\MonCtrl` unless the folder is already
+named that), copies `MonCtrl.exe` + `poke.exe` there, and offers to launch.
+
+## Autostart
+
+To start MonCtrl with Windows:
+
+1. Right-click `MonCtrl.exe` -> **Show more options** (old context menu) ->
+   **Create shortcut**
+2. Press Win+R, type `shell:startup`, press Enter
+3. Drop the shortcut link into that folder - MonCtrl will autostart on login
