@@ -10,6 +10,7 @@
 //   6. name: FriendlyName (non-Generic) -> physical description (non-Generic/PnP)
 //      -> "External Display"; key: sanitized device path
 // All allocations are static (fixed-size arrays). RAM target < 5 MB.
+//  > 1 MB idle ram usage. 
 
 #ifndef UNICODE
 #define UNICODE
@@ -45,7 +46,7 @@
 #define PHYS_RETRY_MS   200
 #define PROBE_ATTEMPTS  3
 #define PROBE_PACE_MS   100
-#define DISCOVER_ROUNDS 20      // re-run whole discovery while nothing acquired
+// #define DISCOVER_ROUNDS 20      // re-run whole discovery while nothing acquired
 #define DISCOVER_WAIT_MS 1500
 
 #define VCP_BRIGHTNESS 0x10
@@ -109,8 +110,7 @@ static bool g_bg_detect = false;       // re-detect without showing the window
 static bool g_dark = false;            // system theme dark
 static HBRUSH g_br_dark = NULL;
 
-// spawn the hidden poke helper (keeps the session DDC/CI path warm; on healthy
-// systems it is simply redundant)
+//initialize the DDC connection (poke.exe is needed)
 static void start_poke() {
     char exe[MAX_PATH], dir[MAX_PATH];
     GetModuleFileNameA(NULL, exe, MAX_PATH);

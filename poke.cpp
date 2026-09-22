@@ -1,8 +1,5 @@
-// poke - keeps the session's DDC/CI path warm for MonCtrl.
-// On some systems GetPhysicalMonitorsFromHMONITOR returns NULL handles forever
-// until another process performs open/destroy cycles on the monitor handles;
-// this helper does exactly that every ~2 s for MonCtrl's lifetime.
-// Console subsystem, user32+dxva2 only - the process shape that works.
+// For detection monitors.
+// Dose not work without this seperate programm.
 
 #define WIN32_LEAN_AND_MEAN
 #define _WIN32_WINNT 0x0601
