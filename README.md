@@ -14,9 +14,13 @@ Linux ddcutil_simple_tray_ui tray app.
 
 You have to compile to arm youself if you want it
 
+# Screenshots
 
+  <img width="421" height="332" alt="image" src="https://github.com/user-attachments/assets/c6393f37-0f28-494d-b14f-807a0ee0414c" />
 
+   <img width="422" height="334" alt="image" src="https://github.com/user-attachments/assets/fa29a4b7-534c-4d77-8605-e16199cc744d" />
 
+  
 
 ## How detection works
 
