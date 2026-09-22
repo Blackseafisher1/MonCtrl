@@ -28,6 +28,7 @@
 
 #include <windows.h>
 #include <windowsx.h>
+#include <dbt.h>
 #include <commctrl.h>
 #include <shellapi.h>
 #include <physicalmonitorenumerationapi.h>
@@ -109,6 +110,12 @@ static HANDLE g_poke = NULL;
 static bool g_bg_detect = false;       // re-detect without showing the window
 static bool g_dark = false;            // system theme dark
 static HBRUSH g_br_dark = NULL;
+static HDEVNOTIFY g_devnotify = NULL;
+
+// GUID_DEVINTERFACE_MONITOR: monitor arrival/removal notifications
+// (same GUID as in QueryDisplayConfig device paths)
+static const GUID GUID_DEV_MONITOR =
+    { 0xE6F07B5F, 0xEE97, 0x4A90, { 0xB0, 0x76, 0x33, 0xF5, 0x7B, 0xF4, 0xEA, 0xA7 } };
 
 // Spawns poke.exe (bounded ~12 s self-exiting run in CREATE_NO_WINDOW): its
 // open/destroy cycles warm the session DDC path so our single-shot opens
@@ -139,6 +146,18 @@ static void stop_poke() {
         CloseHandle(g_poke);
         g_poke = NULL;
     }
+}
+
+// Monitor plug/unplug or signal loss (power off, input switch) arrives as
+// WM_DEVICECHANGE for the monitor interface class - poke + rediscover.
+// DBT_DEVNODES_CHANGED is deliberately ignored (fires for any USB etc.).
+static void register_monitor_notify() {
+    DEV_BROADCAST_DEVICEINTERFACE_W dbi;
+    ZeroMemory(&dbi, sizeof(dbi));
+    dbi.dbcc_size = sizeof(dbi);
+    dbi.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
+    dbi.dbcc_classguid = GUID_DEV_MONITOR;
+    g_devnotify = RegisterDeviceNotificationW(g_main, &dbi, DEVICE_NOTIFY_WINDOW_HANDLE);
 }
 
 static void relayout();
@@ -1304,6 +1323,13 @@ static LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         g_bg_detect = true; // silent rediscovery on topology change
         reset_detection();
         return 0;
+    case WM_DEVICECHANGE:
+        if (w == DBT_DEVICEARRIVAL || w == DBT_DEVICEREMOVECOMPLETE) {
+            g_bg_detect = true; // silent: monitor (un)plugged or signal lost
+            start_poke();
+            reset_detection();
+        }
+        return TRUE;
     case WM_DESTROY: {
         NOTIFYICONDATAW nid;
         ZeroMemory(&nid, sizeof(nid));
@@ -1417,6 +1443,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     relayout();
     for (int i = 0; i < 4; i++) add_tip(g_btn[i], btip[i]);
     add_tray();
+    register_monitor_notify();
     start_poke();
 
     MSG msg;
@@ -1432,6 +1459,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
         Sleep(30);
     }
 done:
+    if (g_devnotify) UnregisterDeviceNotification(g_devnotify);
     if (g_icon) DestroyIcon(g_icon);
     if (g_icon_dib) DeleteObject(g_icon_dib);
     return 0;

@@ -38,6 +38,8 @@ If detection ever gets stuck again, right-click the tray icon and use
 - Tray flyout window: opens next to the tray icon (left-click), closes when you
   click away; right-click menu: Display Controls / Re-detect monitors / About / Quit
 - Resume from suspend re-pokes and re-detects silently in the background
+- Monitor unplug / signal loss (power off, input switch) re-pokes and
+  re-detects via device notifications, also silently in the background
 - Dark title bar + background following the system theme (controls stay native)
 - Sync mode: one brightness slider + per-monitor offsets (-100..100)
 - Individual mode: brightness + contrast slider per monitor with live value
