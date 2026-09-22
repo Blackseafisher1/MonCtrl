@@ -4,6 +4,17 @@ Minimal Windows-native (pure Win32, no Qt, static allocation only) tray app
 controlling monitor brightness and contrast over DDC/CI. Behavior-mirror of the
 Linux ddcutil_simple_tray_ui tray app.
 
+# Install
+
+- x64    :  [MonCtrl.zip](https://github.com/user-attachments/files/32531839/MonCtrl.zip)
+- x86_32 :  [MonCtrl_x86_32.zip](https://github.com/user-attachments/files/32531864/MonCtrl_x86_32.zip)
+
+You have to compile to arm youself if you want it
+
+
+
+
+
 ## How detection works
 
 The detection pipeline follows PowerToys "Power Display" / Twinkle Tray's
