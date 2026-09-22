@@ -2,7 +2,7 @@
 
  <img width="512" height="512" alt="MonCtrl" src="https://github.com/user-attachments/assets/8c911dd5-b39b-434f-81a1-ecb570519f7f" />
 
----
+
 Minimal Windows-native (pure Win32, no Qt, static allocation only) tray app
 controlling monitor brightness and contrast over DDC/CI. Behavior-mirror of the
 Linux ddcutil_simple_tray_ui tray app.
